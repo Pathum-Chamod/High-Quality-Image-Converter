@@ -1,51 +1,63 @@
 import 'dart:io';
 import 'dart:typed_data';
-import 'package:flutter/foundation.dart'; // For checking platform
+import 'package:flutter/foundation.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
-import 'package:image/image.dart' as img; // Pure Dart library for Desktop
+import 'package:image/image.dart' as img;
 
 class ImageService {
   
-  /// Main entry point: Converts file at [path] to [targetFormat]
-  /// Returns the bytes of the new image.
   Future<Uint8List?> convertImage(File originalFile, String targetFormat) async {
-    
-    // STRATEGY 1: Mobile (iOS/Android)
-    // We use the native OS compressor because it's super fast and supports HEIC.
-    if (Platform.isAndroid || Platform.isIOS) {
-      return _convertMobile(originalFile, targetFormat);
+    // STRATEGY 1: Native Platforms (Mobile & macOS)
+    if (Platform.isAndroid || Platform.isIOS || Platform.isMacOS) {
+      return _convertNative(originalFile, targetFormat);
     } 
     
-    // STRATEGY 2: Desktop (Windows/Mac/Linux)
-    // We use the 'image' library (Pure Dart) because it has no native dependencies.
+    // STRATEGY 2: Windows / Linux (Background Isolate)
     else {
-      return _convertDesktop(originalFile, targetFormat);
+      return compute(_isolateConvertDart, {
+        'path': originalFile.absolute.path,
+        'format': targetFormat
+      });
     }
   }
 
-  // --- Mobile Logic ---
-  Future<Uint8List?> _convertMobile(File file, String format) async {
-    var result = await FlutterImageCompress.compressWithFile(
-      file.absolute.path,
-      format: format == 'png' ? CompressFormat.png : CompressFormat.jpeg,
-      quality: 90,
-    );
-    return result;
+  Future<Uint8List?> _convertNative(File file, String format) async {
+    try {
+      // This method returns Future<Uint8List?>, so we have the bytes immediately.
+      var result = await FlutterImageCompress.compressWithFile(
+        file.absolute.path,
+        format: format == 'png' ? CompressFormat.png : CompressFormat.jpeg,
+        quality: 90,
+      );
+      
+      return result; // <--- FIX: Return the bytes directly (removed .readAsBytes)
+    } catch (e) {
+      print("Native conversion failed: $e");
+      return null;
+    }
   }
+}
 
-  // --- Desktop Logic ---
-  // Note: This runs on the UI thread by default. 
-  // For production, we must move this to an Isolate (Step 5).
-  Future<Uint8List?> _convertDesktop(File file, String format) async {
+// Background Isolate for Windows/Linux
+Future<Uint8List?> _isolateConvertDart(Map<String, String> params) async {
+  final file = File(params['path']!);
+  final format = params['format']!;
+  
+  try {
     final bytes = await file.readAsBytes();
-    final image = img.decodeImage(bytes); // Decodes JPG, PNG, GIF, WebP, TIFF
+    final image = img.decodeImage(bytes);
 
     if (image == null) return null;
 
     if (format == 'png') {
       return Uint8List.fromList(img.encodePng(image));
     } else {
-      return Uint8List.fromList(img.encodeJpg(image, quality: 90));
+      // JPEGs can't have transparency, so we give it a white background
+      final jpgImage = img.copyResize(image, width: image.width, backgroundColor: img.ColorRgb8(255, 255, 255));
+      return Uint8List.fromList(img.encodeJpg(jpgImage, quality: 90));
     }
+  } catch (e) {
+    print("Dart conversion failed: $e");
+    return null;
   }
 }
