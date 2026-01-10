@@ -1,0 +1,42 @@
+name: universal_converter
+description: "A new Flutter project."
+publish_to: 'none' 
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.5.0 # Adjusted to be compatible with stable Flutter versions
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # UI & State Management
+  # (Removed the duplicate cupertino_icons from here or below. Kept one.)
+  cupertino_icons: ^1.0.8
+
+  # 1. Universal File Picking (Works on Mobile + Desktop windows)
+  file_picker: ^6.1.1
+
+  # 2. Path Finding (Downloads folder, Temp folder)
+  path_provider: ^2.1.2
+
+  # 3. Mobile Image Engine (Fast, Native, handles HEIC on iOS/Android)
+  flutter_image_compress: ^2.1.0
+
+  # 4. Desktop Image Engine (Pure Dart, works on Win/Mac for resizing/converting)
+  image: ^4.1.3
+
+  # 5. Desktop Drag & Drop support
+  desktop_drop: ^0.4.4
+  
+  # 6. Save to Gallery (Mobile specific, optional for Desktop)
+  gal: ^2.3.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
