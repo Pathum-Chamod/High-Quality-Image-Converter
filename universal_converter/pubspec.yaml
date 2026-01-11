@@ -33,6 +33,10 @@ dependencies:
   # 6. Save to Gallery (Mobile specific, optional for Desktop)
   gal: ^2.3.0
 
+ # 7. Downgrade to 5.1.0 because 6.0 download links are broken
+  ffmpeg_kit_flutter_min_gpl: ^5.1.0
+
+  
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -40,3 +44,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+assets:
+    - assets/bin/ffmpeg.exe
+    - assets/bin/ffmpeg_mac

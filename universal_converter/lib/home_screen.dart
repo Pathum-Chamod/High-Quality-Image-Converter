@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:gal/gal.dart';
 import 'image_service.dart';
+import 'video_service.dart'; // Import the new service
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -15,13 +16,20 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final ImageService _imageService = ImageService();
+  final VideoService _videoService = VideoService();
   
+  // MODE: true = Video, false = Image
+  bool _isVideoMode = false;
+
   List<File> _selectedFiles = [];
   bool _isHovering = false;
   bool _isProcessing = false;
   double _progress = 0.0;
-  String _status = "Ready to convert";
-  String _targetFormat = 'png'; 
+  String _status = "Ready";
+  
+  // Formats
+  String _targetImageFormat = 'png'; 
+  String _targetVideoFormat = 'mp4';
 
   // --- ACTIONS ---
 
@@ -29,18 +37,19 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       final validFiles = details.files
           .map((e) => File(e.path))
-          .where((f) => _isImage(f.path))
+          .where((f) => _isVideoMode ? _isVideo(f.path) : _isImage(f.path))
           .toList();
       _selectedFiles.addAll(validFiles);
     });
   }
 
   Future<void> _pickFiles() async {
-    // UPDATED: Added gif, tiff, ico, bmp, webp to allowed list
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       allowMultiple: true,
       type: FileType.custom, 
-      allowedExtensions: ['jpg', 'jpeg', 'png', 'webp', 'heic', 'bmp', 'gif', 'tiff', 'ico'],
+      allowedExtensions: _isVideoMode 
+        ? ['mp4', 'mov', 'avi', 'mkv', 'flv', 'webm', 'wmv', 'gif']
+        : ['jpg', 'jpeg', 'png', 'webp', 'heic', 'bmp', 'tiff'],
     );
     
     if (result != null) {
@@ -50,10 +59,22 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // UPDATED: Helper to check expanded list
   bool _isImage(String path) {
     final ext = path.split('.').last.toLowerCase();
-    return ['jpg', 'jpeg', 'png', 'webp', 'heic', 'bmp', 'gif', 'tiff', 'ico'].contains(ext);
+    return ['jpg', 'jpeg', 'png', 'webp', 'heic', 'bmp', 'tiff'].contains(ext);
+  }
+
+  bool _isVideo(String path) {
+    final ext = path.split('.').last.toLowerCase();
+    return ['mp4', 'mov', 'avi', 'mkv', 'flv', 'webm', 'wmv', 'gif'].contains(ext);
+  }
+
+  void _toggleMode(int index) {
+    setState(() {
+      _isVideoMode = index == 1;
+      _selectedFiles.clear(); // Clear files when switching modes
+      _status = "Switched to ${_isVideoMode ? 'Video' : 'Image'} mode";
+    });
   }
 
   Future<void> _startConversion() async {
@@ -67,7 +88,6 @@ class _HomeScreenState extends State<HomeScreen> {
     int successCount = 0;
     String? savePath;
     
-    // Get downloads directory for Desktop
     if (Platform.isWindows || Platform.isMacOS) {
       final downloadDir = await getDownloadsDirectory();
       savePath = downloadDir?.path;
@@ -75,28 +95,56 @@ class _HomeScreenState extends State<HomeScreen> {
 
     for (int i = 0; i < _selectedFiles.length; i++) {
       File file = _selectedFiles[i];
-      setState(() => _status = "Processing ${i + 1}/${_selectedFiles.length}...");
+      setState(() => _status = "Converting ${i + 1}/${_selectedFiles.length}...");
 
       try {
-        var bytes = await _imageService.convertImage(file, _targetFormat);
+        bool success = false;
 
-        if (bytes != null) {
+        // --- VIDEO LOGIC ---
+        if (_isVideoMode) {
+          // Determine output path first
+          String newPath;
+          final name = file.uri.pathSegments.last.split('.').first;
+          
           if (Platform.isWindows || Platform.isMacOS) {
-            final name = file.uri.pathSegments.last.split('.').first;
-            final newFile = File('$savePath/${name}_converted.$_targetFormat');
-            await newFile.writeAsBytes(bytes);
+            newPath = '$savePath/${name}_converted.$_targetVideoFormat';
           } else {
             final tempDir = await getTemporaryDirectory();
-            final tempFile = File('${tempDir.path}/temp.$_targetFormat');
-            await tempFile.writeAsBytes(bytes);
-            await Gal.putImage(tempFile.path);
+            newPath = '${tempDir.path}/$name.$_targetVideoFormat';
           }
-          successCount++;
-        } else {
-          print("Failed to convert ${file.path}");
+
+          // Run FFmpeg
+          success = await _videoService.convertVideo(file.path, newPath);
+
+          // Save to Gallery on Mobile
+          if (success && (Platform.isAndroid || Platform.isIOS)) {
+            await Gal.putVideo(newPath);
+            File(newPath).delete(); // Cleanup temp
+          }
+        } 
+        
+        // --- IMAGE LOGIC ---
+        else {
+          var bytes = await _imageService.convertImage(file, _targetImageFormat);
+          if (bytes != null) {
+            if (Platform.isWindows || Platform.isMacOS) {
+              final name = file.uri.pathSegments.last.split('.').first;
+              final newFile = File('$savePath/${name}_converted.$_targetImageFormat');
+              await newFile.writeAsBytes(bytes);
+            } else {
+              final tempDir = await getTemporaryDirectory();
+              final tempFile = File('${tempDir.path}/temp.$_targetImageFormat');
+              await tempFile.writeAsBytes(bytes);
+              await Gal.putImage(tempFile.path);
+            }
+            success = true;
+          }
         }
+
+        if (success) successCount++;
+
       } catch (e) {
-        print("Error on file $i: $e");
+        print("Error: $e");
       }
 
       setState(() => _progress = (i + 1) / _selectedFiles.length);
@@ -104,51 +152,69 @@ class _HomeScreenState extends State<HomeScreen> {
 
     setState(() {
       _isProcessing = false;
-      _status = "Success! $successCount images saved.";
+      _status = "Done! Saved $successCount files.";
       _selectedFiles.clear(); 
     });
     
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(successCount > 0 
-            ? "Success! Saved $successCount images to Downloads." 
-            : "Conversion failed. Check if the file is valid."),
-          backgroundColor: successCount > 0 ? Colors.green : Colors.red,
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text("Processed $successCount files successfully."),
+        backgroundColor: successCount > 0 ? Colors.green : Colors.red,
+      ));
     }
   }
 
-  // --- MODERN UI ---
+  // --- UI ---
 
   @override
   Widget build(BuildContext context) {
-    const primaryColor = Colors.indigoAccent;
+    final primaryColor = _isVideoMode ? Colors.deepOrange : Colors.indigoAccent;
 
     return Scaffold(
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        title: const Text("Universal Converter", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
+        title: const Text("Universal Converter", style: TextStyle(fontWeight: FontWeight.bold)),
         centerTitle: true,
         backgroundColor: Colors.white,
         foregroundColor: Colors.black87,
         elevation: 0,
       ),
-      body: DropTarget(
-        onDragDone: _onDragDone,
-        onDragEntered: (_) => setState(() => _isHovering = true),
-        onDragExited: (_) => setState(() => _isHovering = false),
-        child: Column(
-          children: [
-            _buildDropZone(primaryColor),
-            _buildControlBar(primaryColor),
-            if (_isProcessing) LinearProgressIndicator(value: _progress, minHeight: 6, color: primaryColor),
-            Expanded(
-              child: _selectedFiles.isEmpty ? _buildEmptyState() : _buildFileList(),
+      body: Column(
+        children: [
+          const SizedBox(height: 20),
+          
+          // 1. MODE SWITCHER
+          ToggleButtons(
+            isSelected: [!_isVideoMode, _isVideoMode],
+            onPressed: _isProcessing ? null : _toggleMode,
+            borderRadius: BorderRadius.circular(30),
+            color: Colors.grey.shade600,
+            selectedColor: Colors.white,
+            fillColor: primaryColor,
+            constraints: const BoxConstraints(minWidth: 100, minHeight: 40),
+            children: const [
+              Row(children: [Icon(Icons.image, size: 18), SizedBox(width: 8), Text("Images")]),
+              Row(children: [Icon(Icons.movie, size: 18), SizedBox(width: 8), Text("Videos")]),
+            ],
+          ),
+
+          // 2. DROP ZONE
+          Expanded(
+            child: DropTarget(
+              onDragDone: _onDragDone,
+              onDragEntered: (_) => setState(() => _isHovering = true),
+              onDragExited: (_) => setState(() => _isHovering = false),
+              child: Column(
+                children: [
+                  _buildDropZone(primaryColor),
+                  _buildControlBar(primaryColor),
+                  if (_isProcessing) LinearProgressIndicator(value: _progress, color: primaryColor),
+                  Expanded(child: _selectedFiles.isEmpty ? _buildEmptyState() : _buildFileList(primaryColor)),
+                ],
+              ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -156,24 +222,20 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildDropZone(Color color) {
     return Container(
       width: double.infinity,
-      height: 180,
+      height: 160,
       margin: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: _isHovering ? color.withOpacity(0.1) : Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: _isHovering ? color : Colors.grey.shade300,
-          width: 2,
-        ),
+        border: Border.all(color: _isHovering ? color : Colors.grey.shade300, width: 2),
       ),
       child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.cloud_upload_outlined, size: 50, color: color),
+            Icon(_isVideoMode ? Icons.movie_creation_outlined : Icons.add_photo_alternate_outlined, size: 50, color: color),
             const SizedBox(height: 10),
-            Text("Drag & Drop Images Here", style: TextStyle(fontSize: 18, color: Colors.grey.shade700, fontWeight: FontWeight.bold)),
-            Text("Supports HEIC, JPG, PNG, GIF, BMP", style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+            Text("Drag ${_isVideoMode ? 'Videos' : 'Images'} Here", style: TextStyle(fontSize: 18, color: Colors.grey.shade700, fontWeight: FontWeight.bold)),
           ],
         ),
       ),
@@ -187,37 +249,31 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           ElevatedButton.icon(
             onPressed: _isProcessing ? null : _pickFiles,
-            icon: const Icon(Icons.add_photo_alternate),
+            icon: const Icon(Icons.add),
             label: const Text("Select Files"),
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.black87),
           ),
           const Spacer(),
+          // FORMAT DROPDOWN
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade300)),
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String>(
-                value: _targetFormat,
+                value: _isVideoMode ? _targetVideoFormat : _targetImageFormat,
                 icon: const Icon(Icons.keyboard_arrow_down),
-                // UPDATED: Added WEBP and BMP to dropdown
-                items: ['png', 'jpg', 'webp', 'bmp'].map((f) => DropdownMenuItem(value: f, child: Text(f.toUpperCase()))).toList(),
-                onChanged: (v) => setState(() => _targetFormat = v!),
+                items: _isVideoMode 
+                  ? ['mp4', 'avi', 'mov', 'mkv', 'gif', 'mp3', 'wav'].map((f) => DropdownMenuItem(value: f, child: Text(f.toUpperCase()))).toList()
+                  : ['png', 'jpg', 'webp', 'bmp'].map((f) => DropdownMenuItem(value: f, child: Text(f.toUpperCase()))).toList(),
+                onChanged: (v) => setState(() => _isVideoMode ? _targetVideoFormat = v! : _targetImageFormat = v!),
               ),
             ),
           ),
           const SizedBox(width: 10),
           ElevatedButton(
             onPressed: _isProcessing || _selectedFiles.isEmpty ? null : _startConversion,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: color,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 15),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            child: Text(_isProcessing ? "Converting..." : "Convert All"),
+            style: ElevatedButton.styleFrom(backgroundColor: color, foregroundColor: Colors.white),
+            child: Text(_isProcessing ? "Processing..." : "Convert All"),
           ),
         ],
       ),
@@ -226,31 +282,19 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildEmptyState() {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.image_search, size: 60, color: Colors.grey.shade300),
-          const SizedBox(height: 10),
-          Text("No images selected", style: TextStyle(color: Colors.grey.shade400)),
-        ],
-      ),
+      child: Text("No files selected", style: TextStyle(color: Colors.grey.shade400)),
     );
   }
 
-  Widget _buildFileList() {
+  Widget _buildFileList(Color color) {
     return ListView.builder(
       padding: const EdgeInsets.all(16),
       itemCount: _selectedFiles.length,
       itemBuilder: (context, index) {
-        final file = _selectedFiles[index];
         return Card(
-          margin: const EdgeInsets.only(bottom: 8),
-          elevation: 2,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           child: ListTile(
-            leading: const Icon(Icons.image, size: 40, color: Colors.indigo),
-            title: Text(file.uri.pathSegments.last, maxLines: 1, overflow: TextOverflow.ellipsis),
-            subtitle: Text("Ready to convert"),
+            leading: Icon(_isVideoMode ? Icons.movie : Icons.image, color: color),
+            title: Text(_selectedFiles[index].uri.pathSegments.last),
             trailing: IconButton(
               icon: const Icon(Icons.close, color: Colors.redAccent),
               onPressed: () => setState(() => _selectedFiles.removeAt(index)),
