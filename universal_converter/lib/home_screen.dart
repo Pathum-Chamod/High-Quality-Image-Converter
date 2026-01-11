@@ -36,11 +36,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _pickFiles() async {
-    // FIX: Using FileType.custom ensures HEIC files are clickable on macOS
+    // UPDATED: Added gif, tiff, ico, bmp, webp to allowed list
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       allowMultiple: true,
       type: FileType.custom, 
-      allowedExtensions: ['jpg', 'jpeg', 'png', 'webp', 'heic', 'bmp'],
+      allowedExtensions: ['jpg', 'jpeg', 'png', 'webp', 'heic', 'bmp', 'gif', 'tiff', 'ico'],
     );
     
     if (result != null) {
@@ -50,9 +50,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  // UPDATED: Helper to check expanded list
   bool _isImage(String path) {
     final ext = path.split('.').last.toLowerCase();
-    return ['jpg', 'jpeg', 'png', 'webp', 'heic', 'bmp'].contains(ext);
+    return ['jpg', 'jpeg', 'png', 'webp', 'heic', 'bmp', 'gif', 'tiff', 'ico'].contains(ext);
   }
 
   Future<void> _startConversion() async {
@@ -172,7 +173,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Icon(Icons.cloud_upload_outlined, size: 50, color: color),
             const SizedBox(height: 10),
             Text("Drag & Drop Images Here", style: TextStyle(fontSize: 18, color: Colors.grey.shade700, fontWeight: FontWeight.bold)),
-            Text("Supports HEIC, JPG, PNG", style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+            Text("Supports HEIC, JPG, PNG, GIF, BMP", style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
           ],
         ),
       ),
@@ -201,7 +202,8 @@ class _HomeScreenState extends State<HomeScreen> {
               child: DropdownButton<String>(
                 value: _targetFormat,
                 icon: const Icon(Icons.keyboard_arrow_down),
-                items: ['png', 'jpg'].map((f) => DropdownMenuItem(value: f, child: Text(f.toUpperCase()))).toList(),
+                // UPDATED: Added WEBP and BMP to dropdown
+                items: ['png', 'jpg', 'webp', 'bmp'].map((f) => DropdownMenuItem(value: f, child: Text(f.toUpperCase()))).toList(),
                 onChanged: (v) => setState(() => _targetFormat = v!),
               ),
             ),
