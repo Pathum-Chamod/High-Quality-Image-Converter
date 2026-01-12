@@ -34,7 +34,7 @@ dependencies:
   gal: ^2.3.0
 
  # 7. Downgrade to 5.1.0 because 6.0 download links are broken
-  ffmpeg_kit_flutter_min_gpl: ^5.1.0
+
 
   
 dev_dependencies:

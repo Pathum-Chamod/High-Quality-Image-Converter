@@ -4,20 +4,19 @@ import 'package:path_provider/path_provider.dart';
 
 class VideoService {
   
-  /// Converts video using the BUNDLED FFmpeg binary.
   Future<bool> convertVideo(String inputPath, String outputPath) async {
     try {
-      // 1. Get the path to our internal FFmpeg
-      String? ffmpegPath = await _getFFmpegPath();
+      // 1. Extract the FFmpeg binary from assets to a real file
+      final ffmpegPath = await _extractFFmpeg();
       
       if (ffmpegPath == null) {
-        print("Error: Could not extract FFmpeg binary.");
+        print("Error: Could not find FFmpeg binary.");
         return false;
       }
 
       print("Using FFmpeg at: $ffmpegPath");
 
-      // 2. Run the command
+      // 2. Run the conversion command
       final result = await Process.run(
         ffmpegPath, 
         ['-i', inputPath, '-y', outputPath], 
@@ -27,7 +26,7 @@ class VideoService {
       if (result.exitCode == 0) {
         return true;
       } else {
-        print("FFmpeg Conversion Error: ${result.stderr}");
+        print("FFmpeg Error: ${result.stderr}");
         return false;
       }
     } catch (e) {
@@ -36,40 +35,39 @@ class VideoService {
     }
   }
 
-  /// Extracts the binary from assets to a usable location
-  Future<String?> _getFFmpegPath() async {
+  /// Copies the asset to a temporary folder and makes it executable
+  Future<String?> _extractFFmpeg() async {
     try {
       final dir = await getApplicationSupportDirectory();
-      String binaryName;
       String assetPath;
+      String binaryName;
 
-      if (Platform.isWindows) {
-        binaryName = "ffmpeg.exe";
-        assetPath = "assets/bin/ffmpeg.exe";
-      } else if (Platform.isMacOS) {
+      if (Platform.isMacOS) {
         binaryName = "ffmpeg";
         assetPath = "assets/bin/ffmpeg_mac";
+      } else if (Platform.isWindows) {
+        binaryName = "ffmpeg.exe";
+        assetPath = "assets/bin/ffmpeg.exe";
       } else {
-        return null; // Linux/Mobile logic would go here
+        return null;
       }
 
       final file = File("${dir.path}/$binaryName");
 
-      // Optimization: Only copy if it doesn't exist yet
+      // Only copy if it doesn't exist yet to save time
       if (!await file.exists()) {
         final byteData = await rootBundle.load(assetPath);
         final bytes = byteData.buffer.asUint8List();
         await file.writeAsBytes(bytes);
-        
-        // CRITICAL for Mac: Make it executable
+
+        // IMPORTANT: Make it executable on Mac
         if (Platform.isMacOS) {
           await Process.run('chmod', ['+x', file.path]);
         }
       }
-
       return file.path;
     } catch (e) {
-      print("Error extracting binary: $e");
+      print("Extraction Error: $e");
       return null;
     }
   }
