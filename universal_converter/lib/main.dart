@@ -22,3 +22,4 @@ class ImageConverterApp extends StatelessWidget {
       home: const HomeScreen(),
     );
   }
+}
