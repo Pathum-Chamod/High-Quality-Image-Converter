@@ -919,72 +919,86 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         border: Border.all(color: _cardBorder),
         boxShadow: _isDark ? [] : [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 12, offset: const Offset(0, 2))],
       ),
-      child: Row(
+      child: Column(
         children: [
-          // File count with status breakdown
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), color: _surfaceLight),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.insert_drive_file_rounded, size: 16, color: _textTertiary),
-                const SizedBox(width: 8),
-                Text(
-                  "${_files.length} file${_files.length != 1 ? 's' : ''}",
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _textSecondary),
+          // Top row: file count + format
+          Row(
+            children: [
+              // File count with status breakdown
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), color: _surfaceLight),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.insert_drive_file_rounded, size: 16, color: _textTertiary),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          "${_files.length} file${_files.length != 1 ? 's' : ''}",
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _textSecondary),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (_successFiles.isNotEmpty) ...[
+                        const SizedBox(width: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(6),
+                            color: const Color(0xFF22C55E).withValues(alpha: 0.15),
+                          ),
+                          child: Text('${_successFiles.length}✓', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF22C55E))),
+                        ),
+                      ],
+                      if (_failedFiles.isNotEmpty) ...[
+                        const SizedBox(width: 3),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(6),
+                            color: const Color(0xFFEF4444).withValues(alpha: 0.15),
+                          ),
+                          child: Text('${_failedFiles.length}✗', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFFEF4444))),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
-                if (_successFiles.isNotEmpty) ...[
-                  const SizedBox(width: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(6),
-                      color: const Color(0xFF22C55E).withValues(alpha: 0.15),
-                    ),
-                    child: Text('${_successFiles.length}✓', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF22C55E))),
-                  ),
-                ],
-                if (_failedFiles.isNotEmpty) ...[
-                  const SizedBox(width: 4),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(6),
-                      color: const Color(0xFFEF4444).withValues(alpha: 0.15),
-                    ),
-                    child: Text('${_failedFiles.length}✗', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFFEF4444))),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          Icon(Icons.arrow_forward_rounded, size: 18, color: _textTertiary),
-          const SizedBox(width: 12),
-          // Format dropdown
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              color: _surfaceLight,
-              border: Border.all(color: _accentPrimary.withValues(alpha: 0.3)),
-            ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: _isVideoMode ? _targetVideoFormat : _targetImageFormat,
-                icon: Icon(Icons.keyboard_arrow_down_rounded, color: _accentPrimary, size: 20),
-                dropdownColor: _cardBg,
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: _accentPrimary, letterSpacing: 0.5),
-                items: _isVideoMode
-                    ? ['mp4', 'avi', 'mov', 'mkv', 'gif', 'mp3', 'wav'].map((f) => DropdownMenuItem(value: f, child: Text(f.toUpperCase()))).toList()
-                    : ['png', 'jpg', 'webp', 'bmp'].map((f) => DropdownMenuItem(value: f, child: Text(f.toUpperCase()))).toList(),
-                onChanged: (v) => setState(() => _isVideoMode ? _targetVideoFormat = v! : _targetImageFormat = v!),
               ),
-            ),
+              const SizedBox(width: 10),
+              Icon(Icons.arrow_forward_rounded, size: 18, color: _textTertiary),
+              const SizedBox(width: 10),
+              // Format dropdown
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  color: _surfaceLight,
+                  border: Border.all(color: _accentPrimary.withValues(alpha: 0.3)),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: _isVideoMode ? _targetVideoFormat : _targetImageFormat,
+                    icon: Icon(Icons.keyboard_arrow_down_rounded, color: _accentPrimary, size: 20),
+                    dropdownColor: _cardBg,
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: _accentPrimary, letterSpacing: 0.5),
+                    items: _isVideoMode
+                        ? ['mp4', 'avi', 'mov', 'mkv', 'gif', 'mp3', 'wav'].map((f) => DropdownMenuItem(value: f, child: Text(f.toUpperCase()))).toList()
+                        : ['png', 'jpg', 'webp', 'bmp'].map((f) => DropdownMenuItem(value: f, child: Text(f.toUpperCase()))).toList(),
+                    onChanged: (v) => setState(() => _isVideoMode ? _targetVideoFormat = v! : _targetImageFormat = v!),
+                  ),
+                ),
+              ),
+            ],
           ),
-          const Spacer(),
-          _buildConvertButton(),
+          const SizedBox(height: 12),
+          // Bottom row: convert button (full width)
+          SizedBox(
+            width: double.infinity,
+            child: _buildConvertButton(),
+          ),
         ],
       ),
     );
@@ -1008,7 +1022,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             boxShadow: isEnabled ? [BoxShadow(color: _accentGradient[0].withValues(alpha: 0.4), blurRadius: 16, offset: const Offset(0, 6))] : null,
           ),
           child: Row(
-            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(_isProcessing ? Icons.hourglass_top_rounded : Icons.bolt_rounded, size: 18, color: isEnabled ? Colors.white : _textTertiary),
               const SizedBox(width: 8),

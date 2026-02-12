@@ -33,6 +33,9 @@ dependencies:
   # 6. Save to Gallery (Mobile specific, optional for Desktop)
   gal: ^2.3.0
 
+  # 7. FFmpeg for mobile (iOS/Android) - bundles FFmpeg into the app
+  ffmpeg_kit_flutter_new: ^4.1.0
+
  # 7. Downgrade to 5.1.0 because 6.0 download links are broken
 
 
