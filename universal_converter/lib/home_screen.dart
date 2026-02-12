@@ -1029,20 +1029,27 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     final currentFile = _files.where((f) => f.status == FileStatus.processing).firstOrNull;
     final fileProgress = currentFile?.fileProgress ?? 0.0;
     final isIndeterminate = fileProgress < 0; // -1 means indeterminate (images)
+    final progressColor = _isPaused ? const Color(0xFFF59E0B) : _accentPrimary;
 
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: _cardBg,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _accentPrimary.withValues(alpha: 0.2)),
+        border: Border.all(color: _isPaused 
+            ? const Color(0xFFF59E0B).withValues(alpha: 0.3)
+            : _accentPrimary.withValues(alpha: 0.2)),
         boxShadow: _isDark ? [] : [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 12, offset: const Offset(0, 2))],
       ),
       child: Column(
         children: [
           Row(
             children: [
-              Icon(Icons.sync_rounded, size: 18, color: _accentPrimary),
+              Icon(
+                _isPaused ? Icons.pause_circle_rounded : Icons.sync_rounded, 
+                size: 18, 
+                color: progressColor,
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -1054,8 +1061,34 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               if (!isIndeterminate)
                 Text(
                   "${(fileProgress * 100).toInt()}%", 
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: _accentPrimary),
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: progressColor),
                 ),
+              const SizedBox(width: 12),
+              // Pause / Resume button
+              _buildControlBtn(
+                icon: _isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
+                color: _isPaused ? const Color(0xFF22C55E) : const Color(0xFFF59E0B),
+                tooltip: _isPaused ? "Resume" : "Pause",
+                onTap: _isPaused ? _resumeConversion : _pauseConversion,
+              ),
+              const SizedBox(width: 6),
+              // Stop current file button
+              _buildControlBtn(
+                icon: Icons.stop_rounded,
+                color: const Color(0xFFEF4444),
+                tooltip: "Stop",
+                onTap: _stopCurrentFile,
+              ),
+              // Stop all button (when multiple pending files remain)
+              if (_files.where((f) => f.status == FileStatus.pending).isNotEmpty) ...[
+                const SizedBox(width: 6),
+                _buildControlBtn(
+                  icon: Icons.stop_circle_rounded,
+                  color: const Color(0xFFEF4444),
+                  tooltip: "Stop all",
+                  onTap: _stopAllConversion,
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 14),
@@ -1065,13 +1098,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             child: isIndeterminate
                 ? LinearProgressIndicator(
                     backgroundColor: _surfaceLight, 
-                    valueColor: AlwaysStoppedAnimation<Color>(_accentPrimary), 
+                    valueColor: AlwaysStoppedAnimation<Color>(progressColor), 
                     minHeight: 6,
                   )
                 : LinearProgressIndicator(
                     value: fileProgress, 
                     backgroundColor: _surfaceLight, 
-                    valueColor: AlwaysStoppedAnimation<Color>(_accentPrimary), 
+                    valueColor: AlwaysStoppedAnimation<Color>(progressColor), 
                     minHeight: 6,
                   ),
           ),
@@ -1100,6 +1133,33 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildControlBtn({
+    required IconData icon,
+    required Color color,
+    required String tooltip,
+    required VoidCallback onTap,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
+            width: 34, height: 34,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              color: color.withValues(alpha: 0.12),
+              border: Border.all(color: color.withValues(alpha: 0.3)),
+            ),
+            child: Icon(icon, size: 18, color: color),
+          ),
+        ),
       ),
     );
   }
@@ -1346,12 +1406,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         statusColor = const Color(0xFFEF4444);
         statusIcon = Icons.error_rounded;
         break;
+      case FileStatus.cancelled:
+        statusColor = const Color(0xFFF59E0B);
+        statusIcon = Icons.cancel_rounded;
+        break;
     }
 
     // Highlight border for error files
     final highlightBorder = cf.isHighlighted
         ? Border.all(color: const Color(0xFFEF4444), width: 2)
-        : Border.all(color: cf.status == FileStatus.failed ? const Color(0xFFEF4444).withValues(alpha: 0.3) : _cardBorder);
+        : Border.all(color: (cf.status == FileStatus.failed || cf.status == FileStatus.cancelled) 
+            ? statusColor.withValues(alpha: 0.3) : _cardBorder);
 
     final highlightBg = cf.isHighlighted
         ? const Color(0xFFEF4444).withValues(alpha: _isDark ? 0.08 : 0.04)
@@ -1387,8 +1452,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
                   gradient: LinearGradient(colors: [
-                    statusColor.withValues(alpha: 0.15),
-                    statusColor.withValues(alpha: 0.05),
+                    (_isPaused && cf.status == FileStatus.processing 
+                        ? const Color(0xFFF59E0B) : statusColor).withValues(alpha: 0.15),
+                    (_isPaused && cf.status == FileStatus.processing 
+                        ? const Color(0xFFF59E0B) : statusColor).withValues(alpha: 0.05),
                   ]),
                 ),
                 child: Center(
@@ -1402,27 +1469,36 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                   child: CircularProgressIndicator(
                                     value: cf.fileProgress,
                                     strokeWidth: 2.5,
-                                    valueColor: AlwaysStoppedAnimation<Color>(statusColor),
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      _isPaused ? const Color(0xFFF59E0B) : statusColor),
                                     backgroundColor: statusColor.withValues(alpha: 0.15),
                                   ),
                                 ),
-                                Text(
-                                  '${(cf.fileProgress * 100).toInt()}',
-                                  style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: statusColor),
-                                ),
+                                _isPaused
+                                    ? Icon(Icons.pause_rounded, size: 14, 
+                                        color: const Color(0xFFF59E0B))
+                                    : Text(
+                                        '${(cf.fileProgress * 100).toInt()}',
+                                        style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: statusColor),
+                                      ),
                               ],
                             )
                           : SizedBox(
                               width: 20, height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(statusColor),
-                              ),
+                              child: _isPaused
+                                  ? Icon(Icons.pause_rounded, size: 20, 
+                                      color: const Color(0xFFF59E0B))
+                                  : CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(statusColor),
+                                    ),
                             )
-                      : Text(
-                          cf.extension,
-                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: statusColor, letterSpacing: 0.5),
-                        ),
+                      : cf.status == FileStatus.cancelled
+                          ? Icon(Icons.cancel_rounded, size: 20, color: statusColor)
+                          : Text(
+                              cf.extension,
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: statusColor, letterSpacing: 0.5),
+                            ),
                 ),
               ),
               const SizedBox(width: 14),
@@ -1437,32 +1513,52 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 3),
-                    if (cf.status == FileStatus.failed && cf.errorMessage != null)
+                    if ((cf.status == FileStatus.failed || cf.status == FileStatus.cancelled) && cf.errorMessage != null)
                       Text(
                         cf.errorMessage!,
-                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: Color(0xFFEF4444)),
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: statusColor),
                         overflow: TextOverflow.ellipsis,
                       )
                     else
                       Row(
                         children: [
-                          Icon(statusIcon, size: 12, color: statusColor),
+                          Icon(statusIcon, size: 12, color: _isPaused && cf.status == FileStatus.processing 
+                              ? const Color(0xFFF59E0B) : statusColor),
                           const SizedBox(width: 4),
                           Text(
                             cf.status == FileStatus.pending
                                 ? "→ ${_isVideoMode ? _targetVideoFormat.toUpperCase() : _targetImageFormat.toUpperCase()}"
                                 : cf.status == FileStatus.processing
-                                    ? "Converting... ${cf.fileProgress > 0 ? '${(cf.fileProgress * 100).toInt()}%' : ''}"
+                                    ? (_isPaused 
+                                        ? "Paused ${cf.fileProgress > 0 ? '${(cf.fileProgress * 100).toInt()}%' : ''}"
+                                        : "Converting... ${cf.fileProgress > 0 ? '${(cf.fileProgress * 100).toInt()}%' : ''}")
                                     : "Converted ✓",
-                            style: TextStyle(fontSize: 12, color: statusColor, fontWeight: FontWeight.w500),
+                            style: TextStyle(fontSize: 12, color: _isPaused && cf.status == FileStatus.processing 
+                                ? const Color(0xFFF59E0B) : statusColor, fontWeight: FontWeight.w500),
                           ),
                         ],
                       ),
                   ],
                 ),
               ),
-              // Action buttons
-              if (cf.status == FileStatus.failed) ...[
+              // Processing controls: pause/resume + stop
+              if (cf.status == FileStatus.processing) ...[
+                _buildControlBtn(
+                  icon: _isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
+                  color: _isPaused ? const Color(0xFF22C55E) : const Color(0xFFF59E0B),
+                  tooltip: _isPaused ? "Resume" : "Pause",
+                  onTap: _isPaused ? _resumeConversion : _pauseConversion,
+                ),
+                const SizedBox(width: 6),
+                _buildControlBtn(
+                  icon: Icons.stop_rounded,
+                  color: const Color(0xFFEF4444),
+                  tooltip: "Stop",
+                  onTap: _stopCurrentFile,
+                ),
+              ],
+              // Action buttons for failed/cancelled
+              if (cf.status == FileStatus.failed || cf.status == FileStatus.cancelled) ...[
                 // Retry button
                 _buildFileAction(
                   icon: Icons.refresh_rounded,
@@ -1472,7 +1568,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 ),
                 const SizedBox(width: 6),
               ],
-              // Close/remove button
+              // Close/remove button (not during processing)
               if (cf.status != FileStatus.processing)
                 _buildFileAction(
                   icon: Icons.close_rounded,
@@ -1490,7 +1586,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               child: LinearProgressIndicator(
                 value: cf.fileProgress,
                 backgroundColor: statusColor.withValues(alpha: 0.1),
-                valueColor: AlwaysStoppedAnimation<Color>(statusColor),
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  _isPaused ? const Color(0xFFF59E0B) : statusColor),
                 minHeight: 3,
               ),
             ),
