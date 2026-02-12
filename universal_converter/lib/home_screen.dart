@@ -218,6 +218,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   // --- Pause / Resume / Stop ---
 
   void _pauseConversion() {
+    if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Pause/Resume not supported on mobile")),
+      );
+      return;
+    }
     if (_isVideoMode) {
       _videoService.pauseConversion();
     }
@@ -228,6 +234,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   void _resumeConversion() {
+    if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+      return;
+    }
     if (_isVideoMode) {
       _videoService.resumeConversion();
     }
