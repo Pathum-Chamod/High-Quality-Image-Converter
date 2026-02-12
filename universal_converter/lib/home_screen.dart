@@ -9,7 +9,7 @@ import 'image_service.dart';
 import 'video_service.dart';
 
 // --- File status model ---
-enum FileStatus { pending, processing, success, failed }
+enum FileStatus { pending, processing, success, failed, cancelled }
 
 class ConvertFile {
   final File file;
@@ -45,6 +45,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   final List<ConvertFile> _files = [];
   bool _isHovering = false;
   bool _isProcessing = false;
+  bool _isPaused = false;
+  bool _batchCancelled = false;
   double _progress = 0.0;
   String _status = "Ready";
 
@@ -81,9 +83,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       _isVideoMode ? const Color(0xFFFF6B35) : const Color(0xFF6C63FF);
 
   // Derived lists
-  List<ConvertFile> get _failedFiles => _files.where((f) => f.status == FileStatus.failed).toList();
+  List<ConvertFile> get _failedFiles => _files.where((f) => f.status == FileStatus.failed || f.status == FileStatus.cancelled).toList();
   List<ConvertFile> get _successFiles => _files.where((f) => f.status == FileStatus.success).toList();
-  int get _errorCount => _failedFiles.length;
+  int get _errorCount => _files.where((f) => f.status == FileStatus.failed).length;
+  int get _cancelledCount => _files.where((f) => f.status == FileStatus.cancelled).length;
 
   @override
   void initState() {
@@ -191,23 +194,92 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     cf.status = FileStatus.pending;
     cf.errorMessage = null;
     cf.isHighlighted = false;
+    cf.fileProgress = 0.0;
     setState(() {});
     await _convertSingleFile(index);
   }
 
   Future<void> _retryAllFailed() async {
-    // Reset all failed files to pending
+    // Reset all failed/cancelled files to pending
     for (var f in _files) {
-      if (f.status == FileStatus.failed) {
+      if (f.status == FileStatus.failed || f.status == FileStatus.cancelled) {
         f.status = FileStatus.pending;
         f.errorMessage = null;
         f.isHighlighted = false;
+        f.fileProgress = 0.0;
       }
     }
     setState(() {
       _showNotifications = false;
     });
     await _startConversion();
+  }
+
+  // --- Pause / Resume / Stop ---
+
+  void _pauseConversion() {
+    if (_isVideoMode) {
+      _videoService.pauseConversion();
+    }
+    setState(() {
+      _isPaused = true;
+      _status = "Paused";
+    });
+  }
+
+  void _resumeConversion() {
+    if (_isVideoMode) {
+      _videoService.resumeConversion();
+    }
+    setState(() {
+      _isPaused = false;
+      _status = "Resuming...";
+    });
+  }
+
+  void _stopCurrentFile() {
+    if (_isVideoMode) {
+      _videoService.stopConversion();
+    }
+    // Mark current processing file as cancelled
+    for (var f in _files) {
+      if (f.status == FileStatus.processing) {
+        f.status = FileStatus.cancelled;
+        f.errorMessage = "Cancelled by user";
+        f.fileProgress = 0.0;
+      }
+    }
+    setState(() {
+      _isPaused = false;
+      _status = "Cancelled current file";
+    });
+  }
+
+  void _stopAllConversion() {
+    _batchCancelled = true;
+    if (_isVideoMode) {
+      _videoService.stopConversion();
+    }
+    // Mark current processing file as cancelled
+    for (var f in _files) {
+      if (f.status == FileStatus.processing) {
+        f.status = FileStatus.cancelled;
+        f.errorMessage = "Cancelled by user";
+        f.fileProgress = 0.0;
+      }
+    }
+    // Mark remaining pending files as cancelled too
+    for (var f in _files) {
+      if (f.status == FileStatus.pending) {
+        f.status = FileStatus.cancelled;
+        f.errorMessage = "Batch cancelled";
+      }
+    }
+    setState(() {
+      _isProcessing = false;
+      _isPaused = false;
+      _status = "All conversions stopped";
+    });
   }
 
   void _highlightFile(ConvertFile cf) {
@@ -242,6 +314,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _startConversion() async {
+    _batchCancelled = false;
     final pendingIndices = <int>[];
     for (int i = 0; i < _files.length; i++) {
       if (_files[i].status == FileStatus.pending) pendingIndices.add(i);
@@ -250,6 +323,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
     setState(() {
       _isProcessing = true;
+      _isPaused = false;
       _progress = 0;
     });
 
@@ -257,6 +331,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     final total = pendingIndices.length;
 
     for (final i in pendingIndices) {
+      // Check if batch was cancelled
+      if (_batchCancelled) break;
       await _convertSingleFile(i);
       processed++;
       setState(() => _progress = processed / total);
@@ -264,7 +340,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
     setState(() {
       _isProcessing = false;
-      _status = "Done!";
+      _isPaused = false;
+      _status = _batchCancelled ? "Stopped" : "Done!";
     });
 
     // Bounce the notification bell if there are errors
@@ -274,15 +351,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
     if (mounted) {
       final successCount = _successFiles.length;
-      final failedCount = _failedFiles.length;
+      final failedCount = _files.where((f) => f.status == FileStatus.failed).length;
+      final cancelledCount = _cancelledCount;
 
       String message;
       Color bgColor;
-      if (failedCount == 0) {
+      if (failedCount == 0 && cancelledCount == 0) {
         message = "✅ All $successCount files converted successfully!";
         bgColor = const Color(0xFF22C55E);
+      } else if (cancelledCount > 0 && failedCount == 0) {
+        message = "⚠️ $successCount converted, $cancelledCount cancelled.";
+        bgColor = const Color(0xFFF59E0B);
       } else if (successCount > 0) {
-        message = "⚠️ $successCount converted, $failedCount failed. Tap 🔔 for details.";
+        message = "⚠️ $successCount converted, $failedCount failed, $cancelledCount cancelled.";
         bgColor = const Color(0xFFF59E0B);
       } else {
         message = "❌ All conversions failed. Tap 🔔 for details.";
@@ -342,6 +423,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           },
         );
         if (!success) {
+          // Check if it was user cancellation
+          if (_batchCancelled || _videoService.isPaused == false && cf.fileProgress > 0) {
+            // Could be a cancellation — check cancelled flag
+          }
           final isAudioTarget = _targetVideoFormat == 'mp3' || _targetVideoFormat == 'wav';
           errorMsg = isAudioTarget
               ? "No audio track found in video"
@@ -355,6 +440,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       } else {
         // Image conversions are quick — just show indeterminate
         setState(() => cf.fileProgress = -1.0); // -1 = indeterminate
+        
+        if (_batchCancelled) {
+          setState(() {
+            cf.status = FileStatus.cancelled;
+            cf.errorMessage = "Cancelled by user";
+            cf.fileProgress = 0.0;
+          });
+          return;
+        }
+        
         var bytes = await _imageService.convertImage(cf.file, _targetImageFormat);
         if (bytes != null) {
           if (Platform.isWindows || Platform.isMacOS) {
@@ -373,12 +468,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         }
       }
 
+      // Check if the file was already marked as cancelled by stop action
+      if (cf.status == FileStatus.cancelled) return;
+
       setState(() {
         cf.status = success ? FileStatus.success : FileStatus.failed;
         cf.errorMessage = errorMsg;
         cf.fileProgress = success ? 1.0 : 0.0;
       });
     } catch (e) {
+      // If cancelled, keep cancelled status
+      if (cf.status == FileStatus.cancelled) return;
       setState(() {
         cf.status = FileStatus.failed;
         cf.errorMessage = e.toString();
